@@ -6,6 +6,13 @@ import type { GameState, Quiz, RankingEntry } from "@/lib/types";
 
 const QUIZ_TIME_LIMIT = 10; // 制限時間（秒）
 
+interface AnswerDistribution {
+  option1: number;
+  option2: number;
+  option3: number;
+  option4: number;
+}
+
 interface PendingAnswer {
   user_id: string;
   nickname: string;
@@ -26,6 +33,8 @@ export default function HostPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [timeLeft, setTimeLeft] = useState(QUIZ_TIME_LIMIT);
   const [autoAdvance, setAutoAdvance] = useState(false);
+  const [showAnswerCheck, setShowAnswerCheck] = useState(false);
+  const [answerDistribution, setAnswerDistribution] = useState<AnswerDistribution>({ option1: 0, option2: 0, option3: 0, option4: 0 });
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const pendingAnswersRef = useRef<PendingAnswer[]>([]);
 
@@ -286,6 +295,8 @@ export default function HostPage() {
     }
     setResponseCount(0);
     setTimeLeft(QUIZ_TIME_LIMIT);
+    setShowAnswerCheck(false);
+    setAnswerDistribution({ option1: 0, option2: 0, option3: 0, option4: 0 });
     pendingAnswersRef.current = []; // 回答キューをクリア
     try {
       await updateGameState("voting", quizId);
@@ -299,11 +310,26 @@ export default function HostPage() {
     await updateGameState("ranking");
   };
 
+  // 回答分布を計算
+  const calculateAnswerDistribution = () => {
+    const distribution: AnswerDistribution = { option1: 0, option2: 0, option3: 0, option4: 0 };
+    for (const answer of pendingAnswersRef.current) {
+      if (answer.selected_option === 1) distribution.option1++;
+      else if (answer.selected_option === 2) distribution.option2++;
+      else if (answer.selected_option === 3) distribution.option3++;
+      else if (answer.selected_option === 4) distribution.option4++;
+    }
+    setAnswerDistribution(distribution);
+    setShowAnswerCheck(true);
+  };
+
   // ローカル状態を完全リセット
   const resetLocalState = () => {
     setCurrentQuiz(null);
     setResponseCount(0);
     setTimeLeft(QUIZ_TIME_LIMIT);
+    setShowAnswerCheck(false);
+    setAnswerDistribution({ option1: 0, option2: 0, option3: 0, option4: 0 });
     pendingAnswersRef.current = [];
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -460,7 +486,36 @@ export default function HostPage() {
               />
               <span className="text-sm">時間切れで自動的に正解発表</span>
             </label>
+            {gameState?.status === "voting" && (
+              <button
+                onClick={calculateAnswerDistribution}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm font-bold"
+              >
+                アンサーチェック
+              </button>
+            )}
           </div>
+          {/* 回答分布表示 */}
+          {showAnswerCheck && gameState?.status === "voting" && (
+            <div className="mt-3 grid grid-cols-4 gap-2">
+              <div className="bg-red-600/50 p-3 rounded-lg text-center">
+                <p className="text-sm">A</p>
+                <p className="text-2xl font-bold">{answerDistribution.option1}人</p>
+              </div>
+              <div className="bg-blue-600/50 p-3 rounded-lg text-center">
+                <p className="text-sm">B</p>
+                <p className="text-2xl font-bold">{answerDistribution.option2}人</p>
+              </div>
+              <div className="bg-yellow-600/50 p-3 rounded-lg text-center">
+                <p className="text-sm">C</p>
+                <p className="text-2xl font-bold">{answerDistribution.option3}人</p>
+              </div>
+              <div className="bg-green-600/50 p-3 rounded-lg text-center">
+                <p className="text-sm">D</p>
+                <p className="text-2xl font-bold">{answerDistribution.option4}人</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 現在の問題 */}
