@@ -279,10 +279,20 @@ export default function HostPage() {
   };
 
   const startQuiz = async (quizId: number) => {
+    console.log("startQuiz called with ID:", quizId);
+    if (!quizId) {
+      console.error("Invalid quizId:", quizId);
+      return;
+    }
     setResponseCount(0);
     setTimeLeft(QUIZ_TIME_LIMIT);
     pendingAnswersRef.current = []; // 回答キューをクリア
-    await updateGameState("voting", quizId);
+    try {
+      await updateGameState("voting", quizId);
+      console.log("startQuiz completed");
+    } catch (error) {
+      console.error("startQuiz error:", error);
+    }
   };
 
   const showRanking = async () => {
@@ -370,11 +380,14 @@ export default function HostPage() {
 
   const getNextQuiz = () => {
     const currentIndex = getCurrentQuizIndex();
-    if (currentIndex < quizzes.length - 1) {
+    if (currentIndex >= 0 && currentIndex < quizzes.length - 1) {
       return quizzes[currentIndex + 1];
     }
     return null;
   };
+
+  // 次のクイズを事前に計算
+  const nextQuiz = getNextQuiz();
 
   return (
     <main className="min-h-screen p-4 md:p-8">
@@ -517,9 +530,12 @@ export default function HostPage() {
           </button>
 
           {/* 次の問題へ（結果発表後） */}
-          {gameState?.status === "result" && getNextQuiz() && (
+          {gameState?.status === "result" && nextQuiz && (
             <button
-              onClick={() => startQuiz(getNextQuiz()!.id)}
+              onClick={() => {
+                console.log("Next quiz:", nextQuiz);
+                startQuiz(nextQuiz.id);
+              }}
               disabled={isLoading}
               className="col-span-2 py-4 text-xl font-bold rounded-xl bg-green-600 hover:bg-green-500 disabled:opacity-50"
             >
@@ -528,7 +544,7 @@ export default function HostPage() {
           )}
 
           {/* 結果表示時の終了メッセージ */}
-          {gameState?.status === "result" && !getNextQuiz() && (
+          {gameState?.status === "result" && !nextQuiz && (
             <div className="col-span-2 md:col-span-4 py-4 text-center text-xl text-yellow-400 bg-yellow-600/20 rounded-xl border-2 border-yellow-400">
               全問終了！お疲れ様でした！
             </div>
