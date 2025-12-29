@@ -63,10 +63,10 @@ export default function Home() {
       <div className="max-w-md w-full space-y-8">
         {/* タイトル */}
         <div className="text-center">
-          <h1 className="text-4xl md:text-6xl font-bold text-yellow-400 mb-2">
-            クイズ感謝祭
+          <h1 className="text-3xl md:text-5xl font-bold text-yellow-400 mb-2">
+            たっちレディオクイズ
           </h1>
-          <p className="text-xl md:text-2xl text-yellow-300">2025</p>
+          <p className="text-xl md:text-2xl text-yellow-300">「名言の殿堂」</p>
         </div>
 
         {/* 入力フォーム */}

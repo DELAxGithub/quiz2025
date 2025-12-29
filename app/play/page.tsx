@@ -176,9 +176,10 @@ export default function PlayPage() {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center p-4">
         <div className="text-center space-y-6">
-          <h1 className="text-4xl md:text-6xl font-bold text-yellow-400">
-            クイズ感謝祭
+          <h1 className="text-3xl md:text-5xl font-bold text-yellow-400">
+            たっちレディオクイズ
           </h1>
+          <p className="text-xl md:text-2xl text-yellow-300">「名言の殿堂」</p>
           <div className="animate-pulse">
             <p className="text-2xl md:text-3xl text-white/80">
               まもなく開始...
@@ -186,6 +187,9 @@ export default function PlayPage() {
           </div>
           <p className="text-xl text-white/60">
             ようこそ、{nickname}さん！
+          </p>
+          <p className="text-sm text-red-400/80 mt-4">
+            ※ページを読み込み直すと得点がリセットされます
           </p>
         </div>
       </main>

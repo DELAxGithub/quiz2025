@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "クイズ感謝祭2025",
+  title: "たっちレディオクイズ「名言の殿堂」",
   description: "リアルタイム4択クイズゲーム",
 };
 
