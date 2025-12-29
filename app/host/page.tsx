@@ -231,6 +231,34 @@ export default function HostPage() {
 
     setIsLoading(false);
     fetchRanking();
+    fetchPlayerCount();
+  };
+
+  const kickAllPlayers = async () => {
+    if (!confirm("全参加者を退出させますか？参加者は再度ニックネーム入力が必要になります。")) return;
+
+    setIsLoading(true);
+
+    // 回答を削除
+    await supabase.from("responses").delete().neq("id", 0);
+
+    // 全プレイヤーを削除
+    await supabase.from("players").delete().neq("user_id", "");
+
+    // ゲーム状態をリセット
+    await supabase
+      .from("game_state")
+      .update({
+        status: "waiting",
+        current_quiz_id: null,
+        start_time: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", 1);
+
+    setIsLoading(false);
+    setPlayerCount(0);
+    setRanking([]);
   };
 
   const getCurrentQuizIndex = () => {
@@ -261,9 +289,16 @@ export default function HostPage() {
             <button
               onClick={resetGame}
               disabled={isLoading}
-              className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-medium disabled:opacity-50"
+              className="px-3 py-2 bg-orange-600 hover:bg-orange-500 rounded-lg text-sm font-medium disabled:opacity-50"
             >
-              リセット
+              スコアリセット
+            </button>
+            <button
+              onClick={kickAllPlayers}
+              disabled={isLoading}
+              className="px-3 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-medium disabled:opacity-50"
+            >
+              全員退出
             </button>
           </div>
         </div>
