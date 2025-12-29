@@ -6,6 +6,16 @@ import type { GameState, Quiz, RankingEntry } from "@/lib/types";
 
 const QUIZ_TIME_LIMIT = 10; // 制限時間（秒）
 
+interface PendingAnswer {
+  user_id: string;
+  nickname: string;
+  quiz_id: number;
+  selected_option: number;
+  response_time_ms: number;
+  is_correct: boolean;
+  points: number;
+}
+
 export default function HostPage() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
@@ -17,6 +27,7 @@ export default function HostPage() {
   const [timeLeft, setTimeLeft] = useState(QUIZ_TIME_LIMIT);
   const [autoAdvance, setAutoAdvance] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingAnswersRef = useRef<PendingAnswer[]>([]);
 
   // 初期データ取得
   useEffect(() => {
@@ -53,11 +64,72 @@ export default function HostPage() {
       )
       .subscribe();
 
+    // Broadcast経由の回答を受信
+    const answersChannel = supabase
+      .channel("quiz_answers")
+      .on("broadcast", { event: "answer" }, ({ payload }) => {
+        const answer = payload as PendingAnswer;
+        // 重複チェック
+        const exists = pendingAnswersRef.current.some(
+          (a) => a.user_id === answer.user_id && a.quiz_id === answer.quiz_id
+        );
+        if (!exists) {
+          pendingAnswersRef.current.push(answer);
+          setResponseCount((prev) => prev + 1);
+        }
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(gameStateChannel);
       supabase.removeChannel(responsesChannel);
       supabase.removeChannel(playersChannel);
+      supabase.removeChannel(answersChannel);
     };
+  }, []);
+
+  // 回答をDBに保存（バッチ処理）
+  const saveAnswersToDb = useCallback(async () => {
+    const answers = pendingAnswersRef.current;
+    if (answers.length === 0) return;
+
+    // 回答を保存
+    const { error: insertError } = await supabase.from("responses").upsert(
+      answers.map((a) => ({
+        user_id: a.user_id,
+        nickname: a.nickname,
+        quiz_id: a.quiz_id,
+        selected_option: a.selected_option,
+        response_time_ms: a.response_time_ms,
+        is_correct: a.is_correct,
+        points: a.points,
+      })),
+      { onConflict: "user_id,quiz_id" }
+    );
+
+    if (insertError) {
+      console.error("Failed to save responses:", insertError);
+    }
+
+    // プレイヤーのスコアを更新（正解者のみ）
+    const correctAnswers = answers.filter((a) => a.points > 0);
+    for (const answer of correctAnswers) {
+      const { data: player } = await supabase
+        .from("players")
+        .select("total_score")
+        .eq("user_id", answer.user_id)
+        .single();
+
+      if (player) {
+        await supabase
+          .from("players")
+          .update({ total_score: player.total_score + answer.points })
+          .eq("user_id", answer.user_id);
+      }
+    }
+
+    // 保存済みの回答をクリア
+    pendingAnswersRef.current = [];
   }, []);
 
   // 正解発表（useCallbackでメモ化）
@@ -67,6 +139,11 @@ export default function HostPage() {
       timerRef.current = null;
     }
     setIsLoading(true);
+
+    // まず回答をDBに保存
+    await saveAnswersToDb();
+
+    // 状態を更新
     await supabase
       .from("game_state")
       .update({
@@ -75,8 +152,12 @@ export default function HostPage() {
         updated_at: new Date().toISOString(),
       })
       .eq("id", 1);
+
+    // ランキング更新
+    fetchRanking();
+
     setIsLoading(false);
-  }, []);
+  }, [saveAnswersToDb]);
 
   // ゲーム状態変更時
   useEffect(() => {
@@ -200,6 +281,7 @@ export default function HostPage() {
   const startQuiz = async (quizId: number) => {
     setResponseCount(0);
     setTimeLeft(QUIZ_TIME_LIMIT);
+    pendingAnswersRef.current = []; // 回答キューをクリア
     await updateGameState("voting", quizId);
   };
 

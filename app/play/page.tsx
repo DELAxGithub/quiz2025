@@ -150,32 +150,23 @@ export default function PlayPage() {
       setIsCorrect(correct);
       setEarnedPoints(points);
 
-      // 回答を保存
-      await supabase.from("responses").insert({
-        user_id: userId,
-        nickname: nickname,
-        quiz_id: currentQuiz.id,
-        selected_option: option,
-        response_time_ms: responseTimeMs,
-        is_correct: correct,
-        points: points,
+      // Broadcast経由で回答を送信（DB負荷軽減）
+      const channel = supabase.channel("quiz_answers");
+      await channel.subscribe();
+      await channel.send({
+        type: "broadcast",
+        event: "answer",
+        payload: {
+          user_id: userId,
+          nickname: nickname,
+          quiz_id: currentQuiz.id,
+          selected_option: option,
+          response_time_ms: responseTimeMs,
+          is_correct: correct,
+          points: points,
+        },
       });
-
-      // プレイヤーの合計スコアを更新
-      if (points > 0) {
-        const { data: player } = await supabase
-          .from("players")
-          .select("total_score")
-          .eq("user_id", userId)
-          .single();
-
-        if (player) {
-          await supabase
-            .from("players")
-            .update({ total_score: player.total_score + points })
-            .eq("user_id", userId);
-        }
-      }
+      supabase.removeChannel(channel);
     },
     [userId, nickname, currentQuiz, hasAnswered]
   );
