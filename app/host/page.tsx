@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import type { GameState, Quiz, RankingEntry } from "@/lib/types";
+
+const QUIZ_TIME_LIMIT = 10; // 制限時間（秒）
 
 export default function HostPage() {
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -12,6 +14,9 @@ export default function HostPage() {
   const [responseCount, setResponseCount] = useState(0);
   const [playerCount, setPlayerCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(QUIZ_TIME_LIMIT);
+  const [autoAdvance, setAutoAdvance] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // 初期データ取得
   useEffect(() => {
@@ -55,6 +60,24 @@ export default function HostPage() {
     };
   }, []);
 
+  // 正解発表（useCallbackでメモ化）
+  const showResult = useCallback(async () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setIsLoading(true);
+    await supabase
+      .from("game_state")
+      .update({
+        status: "result",
+        start_time: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", 1);
+    setIsLoading(false);
+  }, []);
+
   // ゲーム状態変更時
   useEffect(() => {
     if (gameState?.current_quiz_id) {
@@ -65,7 +88,46 @@ export default function HostPage() {
     if (gameState?.status === "ranking") {
       fetchRanking();
     }
+    // voting開始時にタイマーをリセット
+    if (gameState?.status === "voting") {
+      setTimeLeft(QUIZ_TIME_LIMIT);
+    }
   }, [gameState, quizzes]);
+
+  // カウントダウンタイマー
+  useEffect(() => {
+    if (gameState?.status !== "voting") {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      return;
+    }
+
+    timerRef.current = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          // 時間切れ
+          if (autoAdvance) {
+            showResult();
+          }
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [gameState?.status, autoAdvance, showResult]);
 
   const fetchGameState = async () => {
     const { data } = await supabase
@@ -137,11 +199,8 @@ export default function HostPage() {
 
   const startQuiz = async (quizId: number) => {
     setResponseCount(0);
+    setTimeLeft(QUIZ_TIME_LIMIT);
     await updateGameState("voting", quizId);
-  };
-
-  const showResult = async () => {
-    await updateGameState("result");
   };
 
   const showRanking = async () => {
@@ -211,7 +270,7 @@ export default function HostPage() {
 
         {/* ステータス表示 */}
         <div className="bg-white/10 rounded-xl p-4">
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <span className="text-lg">現在のステータス:</span>
             <span
               className={`px-4 py-2 rounded-full font-bold ${
@@ -230,10 +289,27 @@ export default function HostPage() {
               {gameState?.status === "ranking" && "ランキング"}
             </span>
             {gameState?.status === "voting" && (
-              <span className="text-lg">
-                回答数: <strong className="text-yellow-300">{responseCount}/{playerCount}</strong>
-              </span>
+              <>
+                <span className="text-lg">
+                  回答数: <strong className="text-yellow-300">{responseCount}/{playerCount}</strong>
+                </span>
+                <span className={`text-3xl font-bold ${timeLeft <= 3 ? "text-red-500 animate-pulse" : "text-yellow-400"}`}>
+                  残り {timeLeft}秒
+                </span>
+              </>
             )}
+          </div>
+          {/* 自動進行トグル */}
+          <div className="mt-3 flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoAdvance}
+                onChange={(e) => setAutoAdvance(e.target.checked)}
+                className="w-5 h-5 rounded"
+              />
+              <span className="text-sm">時間切れで自動的に正解発表</span>
+            </label>
           </div>
         </div>
 
