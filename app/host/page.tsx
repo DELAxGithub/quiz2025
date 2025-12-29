@@ -1,0 +1,409 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+import type { GameState, Quiz, RankingEntry } from "@/lib/types";
+
+export default function HostPage() {
+  const [gameState, setGameState] = useState<GameState | null>(null);
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [currentQuiz, setCurrentQuiz] = useState<Quiz | null>(null);
+  const [ranking, setRanking] = useState<RankingEntry[]>([]);
+  const [responseCount, setResponseCount] = useState(0);
+  const [playerCount, setPlayerCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // 初期データ取得
+  useEffect(() => {
+    fetchGameState();
+    fetchQuizzes();
+    fetchPlayerCount();
+    fetchRanking();
+
+    // Realtimeサブスクリプション
+    const gameStateChannel = supabase
+      .channel("host_game_state")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "game_state" },
+        (payload) => setGameState(payload.new as GameState)
+      )
+      .subscribe();
+
+    const responsesChannel = supabase
+      .channel("host_responses")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "responses" },
+        () => fetchResponseCount()
+      )
+      .subscribe();
+
+    const playersChannel = supabase
+      .channel("host_players")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "players" },
+        () => fetchPlayerCount()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(gameStateChannel);
+      supabase.removeChannel(responsesChannel);
+      supabase.removeChannel(playersChannel);
+    };
+  }, []);
+
+  // ゲーム状態変更時
+  useEffect(() => {
+    if (gameState?.current_quiz_id) {
+      const quiz = quizzes.find((q) => q.id === gameState.current_quiz_id);
+      setCurrentQuiz(quiz || null);
+      fetchResponseCount();
+    }
+    if (gameState?.status === "ranking") {
+      fetchRanking();
+    }
+  }, [gameState, quizzes]);
+
+  const fetchGameState = async () => {
+    const { data } = await supabase
+      .from("game_state")
+      .select("*")
+      .eq("id", 1)
+      .single();
+    if (data) setGameState(data);
+  };
+
+  const fetchQuizzes = async () => {
+    const { data } = await supabase
+      .from("quizzes")
+      .select("*")
+      .order("order_num");
+    if (data) setQuizzes(data);
+  };
+
+  const fetchPlayerCount = async () => {
+    const { count } = await supabase
+      .from("players")
+      .select("*", { count: "exact", head: true });
+    setPlayerCount(count || 0);
+  };
+
+  const fetchResponseCount = async () => {
+    if (!gameState?.current_quiz_id) return;
+    const { count } = await supabase
+      .from("responses")
+      .select("*", { count: "exact", head: true })
+      .eq("quiz_id", gameState.current_quiz_id);
+    setResponseCount(count || 0);
+  };
+
+  const fetchRanking = async () => {
+    const { data } = await supabase
+      .from("players")
+      .select("nickname, total_score")
+      .order("total_score", { ascending: false })
+      .limit(10);
+
+    if (data) {
+      setRanking(
+        data.map((p, i) => ({
+          nickname: p.nickname,
+          total_score: p.total_score,
+          rank: i + 1,
+        }))
+      );
+    }
+  };
+
+  const updateGameState = async (
+    status: GameState["status"],
+    quizId?: number
+  ) => {
+    setIsLoading(true);
+    await supabase
+      .from("game_state")
+      .update({
+        status,
+        current_quiz_id: quizId ?? gameState?.current_quiz_id,
+        start_time: status === "voting" ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", 1);
+    setIsLoading(false);
+  };
+
+  const startQuiz = async (quizId: number) => {
+    setResponseCount(0);
+    await updateGameState("voting", quizId);
+  };
+
+  const showResult = async () => {
+    await updateGameState("result");
+  };
+
+  const showRanking = async () => {
+    await updateGameState("ranking");
+  };
+
+  const resetGame = async () => {
+    if (!confirm("ゲームをリセットしますか？全ての回答とスコアが削除されます。")) return;
+
+    setIsLoading(true);
+
+    // 回答を削除
+    await supabase.from("responses").delete().neq("id", 0);
+
+    // プレイヤーのスコアをリセット
+    await supabase.from("players").update({ total_score: 0 }).neq("user_id", "");
+
+    // ゲーム状態をリセット
+    await supabase
+      .from("game_state")
+      .update({
+        status: "waiting",
+        current_quiz_id: null,
+        start_time: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", 1);
+
+    setIsLoading(false);
+    fetchRanking();
+  };
+
+  const getCurrentQuizIndex = () => {
+    if (!currentQuiz) return -1;
+    return quizzes.findIndex((q) => q.id === currentQuiz.id);
+  };
+
+  const getNextQuiz = () => {
+    const currentIndex = getCurrentQuizIndex();
+    if (currentIndex < quizzes.length - 1) {
+      return quizzes[currentIndex + 1];
+    }
+    return null;
+  };
+
+  return (
+    <main className="min-h-screen p-4 md:p-8">
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* ヘッダー */}
+        <div className="flex justify-between items-center">
+          <h1 className="text-3xl md:text-4xl font-bold text-yellow-400">
+            ホスト画面
+          </h1>
+          <div className="flex items-center gap-4">
+            <span className="text-lg">
+              参加者: <strong className="text-yellow-300">{playerCount}人</strong>
+            </span>
+            <button
+              onClick={resetGame}
+              disabled={isLoading}
+              className="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-medium disabled:opacity-50"
+            >
+              リセット
+            </button>
+          </div>
+        </div>
+
+        {/* ステータス表示 */}
+        <div className="bg-white/10 rounded-xl p-4">
+          <div className="flex items-center gap-4">
+            <span className="text-lg">現在のステータス:</span>
+            <span
+              className={`px-4 py-2 rounded-full font-bold ${
+                gameState?.status === "waiting"
+                  ? "bg-gray-600"
+                  : gameState?.status === "voting"
+                  ? "bg-green-600"
+                  : gameState?.status === "result"
+                  ? "bg-blue-600"
+                  : "bg-yellow-600"
+              }`}
+            >
+              {gameState?.status === "waiting" && "待機中"}
+              {gameState?.status === "voting" && "回答受付中"}
+              {gameState?.status === "result" && "結果発表"}
+              {gameState?.status === "ranking" && "ランキング"}
+            </span>
+            {gameState?.status === "voting" && (
+              <span className="text-lg">
+                回答数: <strong className="text-yellow-300">{responseCount}/{playerCount}</strong>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* 現在の問題 */}
+        {currentQuiz && (
+          <div className="bg-white/10 rounded-xl p-6">
+            <p className="text-sm text-white/60 mb-2">
+              第{getCurrentQuizIndex() + 1}問 / {quizzes.length}問
+            </p>
+            <p className="text-2xl font-bold mb-4">{currentQuiz.question}</p>
+            <div className="grid grid-cols-2 gap-2 text-lg">
+              {[1, 2, 3, 4].map((i) => (
+                <div
+                  key={i}
+                  className={`p-3 rounded-lg ${
+                    i === currentQuiz.correct_answer_index
+                      ? "bg-green-600/50 border-2 border-green-400"
+                      : "bg-white/10"
+                  }`}
+                >
+                  <span className="font-bold mr-2">
+                    {["A", "B", "C", "D"][i - 1]}:
+                  </span>
+                  {currentQuiz[`option_${i}` as keyof Quiz]}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* コントロールボタン */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {gameState?.status === "waiting" && quizzes.length > 0 && (
+            <button
+              onClick={() => startQuiz(quizzes[0].id)}
+              disabled={isLoading}
+              className="col-span-2 md:col-span-4 py-4 text-xl font-bold rounded-xl bg-green-600 hover:bg-green-500 disabled:opacity-50"
+            >
+              第1問を開始
+            </button>
+          )}
+
+          {gameState?.status === "voting" && (
+            <button
+              onClick={showResult}
+              disabled={isLoading}
+              className="col-span-2 md:col-span-4 py-4 text-xl font-bold rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50"
+            >
+              正解を発表
+            </button>
+          )}
+
+          {gameState?.status === "result" && (
+            <>
+              {getNextQuiz() ? (
+                <button
+                  onClick={() => startQuiz(getNextQuiz()!.id)}
+                  disabled={isLoading}
+                  className="col-span-1 py-4 text-lg font-bold rounded-xl bg-green-600 hover:bg-green-500 disabled:opacity-50"
+                >
+                  次の問題へ
+                </button>
+              ) : (
+                <div className="col-span-1 py-4 text-center text-lg text-white/50 bg-gray-600 rounded-xl">
+                  最終問題終了
+                </div>
+              )}
+              <button
+                onClick={showRanking}
+                disabled={isLoading}
+                className="col-span-1 py-4 text-lg font-bold rounded-xl bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50"
+              >
+                ランキング表示
+              </button>
+            </>
+          )}
+
+          {gameState?.status === "ranking" && (
+            <>
+              {getNextQuiz() ? (
+                <button
+                  onClick={() => startQuiz(getNextQuiz()!.id)}
+                  disabled={isLoading}
+                  className="col-span-2 md:col-span-4 py-4 text-xl font-bold rounded-xl bg-green-600 hover:bg-green-500 disabled:opacity-50"
+                >
+                  次の問題へ
+                </button>
+              ) : (
+                <div className="col-span-2 md:col-span-4 py-4 text-center text-xl text-yellow-400 bg-yellow-600/20 rounded-xl border-2 border-yellow-400">
+                  全問終了！お疲れ様でした！
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* ランキング */}
+        <div className="bg-white/10 rounded-xl p-6">
+          <h2 className="text-2xl font-bold text-yellow-400 mb-4">
+            現在のランキング
+          </h2>
+          <div className="space-y-2">
+            {ranking.length === 0 ? (
+              <p className="text-white/50">まだ回答がありません</p>
+            ) : (
+              ranking.map((entry) => (
+                <div
+                  key={entry.rank}
+                  className={`ranking-item ${
+                    entry.rank <= 3 ? `ranking-top3 ranking-${entry.rank}` : ""
+                  }`}
+                >
+                  <div className="flex items-center gap-4">
+                    <span
+                      className={`text-xl font-bold ${
+                        entry.rank === 1
+                          ? "text-yellow-400"
+                          : entry.rank === 2
+                          ? "text-gray-300"
+                          : entry.rank === 3
+                          ? "text-orange-400"
+                          : "text-white/70"
+                      }`}
+                    >
+                      {entry.rank}
+                    </span>
+                    <span className="text-lg font-medium">{entry.nickname}</span>
+                  </div>
+                  <span className="text-lg font-bold text-yellow-300">
+                    {entry.total_score.toLocaleString()} pt
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* 問題一覧 */}
+        <div className="bg-white/10 rounded-xl p-6">
+          <h2 className="text-2xl font-bold text-yellow-400 mb-4">問題一覧</h2>
+          <div className="space-y-2">
+            {quizzes.map((quiz, index) => (
+              <div
+                key={quiz.id}
+                className={`flex items-center justify-between p-3 rounded-lg ${
+                  currentQuiz?.id === quiz.id
+                    ? "bg-yellow-600/30 border border-yellow-400"
+                    : "bg-white/5"
+                }`}
+              >
+                <div>
+                  <span className="text-sm text-white/60 mr-2">
+                    第{index + 1}問
+                  </span>
+                  <span>{quiz.question}</span>
+                </div>
+                {gameState?.status !== "voting" && (
+                  <button
+                    onClick={() => startQuiz(quiz.id)}
+                    disabled={isLoading}
+                    className="px-3 py-1 text-sm bg-green-600 hover:bg-green-500 rounded disabled:opacity-50"
+                  >
+                    開始
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}

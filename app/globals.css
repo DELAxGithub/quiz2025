@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #1a1a2e;
+  --foreground: #ffffff;
+}
+
+body {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  color: var(--foreground);
+  min-height: 100vh;
+}
+
+/* 感謝祭風のボタンスタイル */
+.quiz-button {
+  @apply font-bold text-2xl md:text-4xl py-8 px-4 rounded-xl transition-all duration-200 transform active:scale-95;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.quiz-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.quiz-button-a {
+  @apply bg-red-600 hover:bg-red-500 text-white;
+}
+
+.quiz-button-b {
+  @apply bg-blue-600 hover:bg-blue-500 text-white;
+}
+
+.quiz-button-c {
+  @apply bg-yellow-500 hover:bg-yellow-400 text-black;
+}
+
+.quiz-button-d {
+  @apply bg-green-600 hover:bg-green-500 text-white;
+}
+
+/* カウントダウンタイマー */
+.countdown-timer {
+  @apply text-8xl md:text-9xl font-bold;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+}
+
+/* ランキングボード */
+.ranking-item {
+  @apply flex items-center justify-between p-4 rounded-lg mb-2;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.ranking-top3 {
+  @apply border-2;
+}
+
+.ranking-1 {
+  @apply border-yellow-400 bg-yellow-400/20;
+}
+
+.ranking-2 {
+  @apply border-gray-300 bg-gray-300/20;
+}
+
+.ranking-3 {
+  @apply border-orange-400 bg-orange-400/20;
+}
