@@ -340,69 +340,61 @@ export default function HostPage() {
           </div>
         )}
 
-        {/* コントロールボタン */}
+        {/* コントロールボタン - 常に全て表示 */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {gameState?.status === "waiting" && quizzes.length > 0 && (
+          {/* 正解を発表 */}
+          <button
+            onClick={showResult}
+            disabled={isLoading || gameState?.status !== "voting"}
+            className={`col-span-2 py-4 text-xl font-bold rounded-xl ${
+              gameState?.status === "voting"
+                ? "bg-blue-600 hover:bg-blue-500"
+                : "bg-gray-600 opacity-50"
+            } disabled:cursor-not-allowed`}
+          >
+            正解を発表
+          </button>
+
+          {/* ランキング表示 */}
+          <button
+            onClick={showRanking}
+            disabled={isLoading}
+            className="col-span-2 py-4 text-xl font-bold rounded-xl bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50"
+          >
+            ランキング表示
+          </button>
+
+          {/* デバッグ情報 */}
+          <div className="col-span-2 md:col-span-4 text-sm text-white/50 bg-black/30 p-2 rounded">
+            Status: {gameState?.status} | Quiz ID: {gameState?.current_quiz_id} | Current Index: {getCurrentQuizIndex()}
+          </div>
+
+          {/* 待機に戻す */}
+          <button
+            onClick={async () => {
+              await supabase.from("game_state").update({ status: "waiting", updated_at: new Date().toISOString() }).eq("id", 1);
+            }}
+            className="col-span-2 py-3 text-lg font-bold rounded-xl bg-gray-600 hover:bg-gray-500"
+          >
+            待機画面に戻す
+          </button>
+
+          {/* 次の問題へ（結果発表後） */}
+          {gameState?.status === "result" && getNextQuiz() && (
             <button
-              onClick={() => startQuiz(quizzes[0].id)}
+              onClick={() => startQuiz(getNextQuiz()!.id)}
               disabled={isLoading}
-              className="col-span-2 md:col-span-4 py-4 text-xl font-bold rounded-xl bg-green-600 hover:bg-green-500 disabled:opacity-50"
+              className="col-span-2 py-4 text-xl font-bold rounded-xl bg-green-600 hover:bg-green-500 disabled:opacity-50"
             >
-              第1問を開始
+              次の問題へ (第{getCurrentQuizIndex() + 2}問)
             </button>
           )}
 
-          {gameState?.status === "voting" && (
-            <button
-              onClick={showResult}
-              disabled={isLoading}
-              className="col-span-2 md:col-span-4 py-4 text-xl font-bold rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50"
-            >
-              正解を発表
-            </button>
-          )}
-
-          {gameState?.status === "result" && (
-            <>
-              {getNextQuiz() ? (
-                <button
-                  onClick={() => startQuiz(getNextQuiz()!.id)}
-                  disabled={isLoading}
-                  className="col-span-1 py-4 text-lg font-bold rounded-xl bg-green-600 hover:bg-green-500 disabled:opacity-50"
-                >
-                  次の問題へ
-                </button>
-              ) : (
-                <div className="col-span-1 py-4 text-center text-lg text-white/50 bg-gray-600 rounded-xl">
-                  最終問題終了
-                </div>
-              )}
-              <button
-                onClick={showRanking}
-                disabled={isLoading}
-                className="col-span-1 py-4 text-lg font-bold rounded-xl bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50"
-              >
-                ランキング表示
-              </button>
-            </>
-          )}
-
-          {gameState?.status === "ranking" && (
-            <>
-              {getNextQuiz() ? (
-                <button
-                  onClick={() => startQuiz(getNextQuiz()!.id)}
-                  disabled={isLoading}
-                  className="col-span-2 md:col-span-4 py-4 text-xl font-bold rounded-xl bg-green-600 hover:bg-green-500 disabled:opacity-50"
-                >
-                  次の問題へ
-                </button>
-              ) : (
-                <div className="col-span-2 md:col-span-4 py-4 text-center text-xl text-yellow-400 bg-yellow-600/20 rounded-xl border-2 border-yellow-400">
-                  全問終了！お疲れ様でした！
-                </div>
-              )}
-            </>
+          {/* 結果表示時の終了メッセージ */}
+          {gameState?.status === "result" && !getNextQuiz() && (
+            <div className="col-span-2 md:col-span-4 py-4 text-center text-xl text-yellow-400 bg-yellow-600/20 rounded-xl border-2 border-yellow-400">
+              全問終了！お疲れ様でした！
+            </div>
           )}
         </div>
 
@@ -466,15 +458,13 @@ export default function HostPage() {
                   </span>
                   <span>{quiz.question}</span>
                 </div>
-                {gameState?.status !== "voting" && (
-                  <button
-                    onClick={() => startQuiz(quiz.id)}
-                    disabled={isLoading}
-                    className="px-3 py-1 text-sm bg-green-600 hover:bg-green-500 rounded disabled:opacity-50"
-                  >
-                    開始
-                  </button>
-                )}
+                <button
+                  onClick={() => startQuiz(quiz.id)}
+                  disabled={isLoading}
+                  className="px-3 py-1 text-sm bg-green-600 hover:bg-green-500 rounded disabled:opacity-50"
+                >
+                  開始
+                </button>
               </div>
             ))}
           </div>
