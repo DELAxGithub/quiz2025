@@ -289,6 +289,18 @@ export default function HostPage() {
     await updateGameState("ranking");
   };
 
+  // ローカル状態を完全リセット
+  const resetLocalState = () => {
+    setCurrentQuiz(null);
+    setResponseCount(0);
+    setTimeLeft(QUIZ_TIME_LIMIT);
+    pendingAnswersRef.current = [];
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
   const resetGame = async () => {
     if (!confirm("ゲームをリセットしますか？全ての回答とスコアが削除されます。")) return;
 
@@ -310,6 +322,10 @@ export default function HostPage() {
         updated_at: new Date().toISOString(),
       })
       .eq("id", 1);
+
+    // ローカル状態をリセット
+    resetLocalState();
+    setGameState({ id: 1, current_quiz_id: null, status: "waiting", start_time: null, updated_at: new Date().toISOString() });
 
     setIsLoading(false);
     fetchRanking();
@@ -337,6 +353,10 @@ export default function HostPage() {
         updated_at: new Date().toISOString(),
       })
       .eq("id", 1);
+
+    // ローカル状態をリセット
+    resetLocalState();
+    setGameState({ id: 1, current_quiz_id: null, status: "waiting", start_time: null, updated_at: new Date().toISOString() });
 
     setIsLoading(false);
     setPlayerCount(0);
